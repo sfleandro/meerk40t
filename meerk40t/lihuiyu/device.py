@@ -739,8 +739,8 @@ class LhystudiosDriver:
         self.root_context.setting(int, "opt_jog_mode", 0)
         self.root_context.setting(int, "opt_jog_minimum", 127)
 
-        self.rapid = self.root_context.opt_rapid_between
-        self.jog = self.root_context.opt_jog_mode
+        # self.rapid = self.root_context.opt_rapid_between
+        # self.jog = self.root_context.opt_jog_mode
         context._quit = False
 
         self.next = None
@@ -1079,6 +1079,33 @@ class LhystudiosDriver:
         """
         self.goto_relative(x - self.current_x, y - self.current_y, cut)
 
+    def _move_in_rapid_mode(self, dx, dy, cut):
+        if self.rapid_override and (dx != 0 or dy != 0):
+            # Rapid movement override. Should make programmed jogs.
+            self.set_acceleration(None)
+            self.set_step(0)
+            if dx != 0:
+                self.ensure_rapid_mode()
+                self.set_speed(self.rapid_override_speed_x)
+                self.ensure_program_mode()
+                self.goto_octent(dx, 0, cut)
+            if dy != 0:
+                if self.rapid_override_speed_x != self.rapid_override_speed_y:
+                    self.ensure_rapid_mode()
+                    self.set_speed(self.rapid_override_speed_y)
+                    self.ensure_program_mode()
+                self.goto_octent(0, dy, cut)
+            self.ensure_rapid_mode()
+        else:
+            self.data_output(b"I")
+            if dx != 0:
+                self.goto_x(dx)
+            if dy != 0:
+                self.goto_y(dy)
+            self.data_output(b"S1P\n")
+            if not self.context.autolock:
+                self.data_output(b"IS2P\n")
+
     def goto_relative(self, dx, dy, cut):
         """
         Goto relative dx, dy. With cut set or not set.
@@ -1093,31 +1120,7 @@ class LhystudiosDriver:
         dx = int(round(dx))
         dy = int(round(dy))
         if self.state == DRIVER_STATE_RAPID:
-            if self.rapid_override and (dx != 0 or dy != 0):
-                # Rapid movement override. Should make programmed jogs.
-                self.set_acceleration(None)
-                self.set_step(0)
-                if dx != 0:
-                    self.ensure_rapid_mode()
-                    self.set_speed(self.rapid_override_speed_x)
-                    self.ensure_program_mode()
-                    self.goto_octent(dx, 0, cut)
-                if dy != 0:
-                    if self.rapid_override_speed_x != self.rapid_override_speed_y:
-                        self.ensure_rapid_mode()
-                        self.set_speed(self.rapid_override_speed_y)
-                        self.ensure_program_mode()
-                    self.goto_octent(0, dy, cut)
-                self.ensure_rapid_mode()
-            else:
-                self.data_output(b"I")
-                if dx != 0:
-                    self.goto_x(dx)
-                if dy != 0:
-                    self.goto_y(dy)
-                self.data_output(b"S1P\n")
-                if not self.context.autolock:
-                    self.data_output(b"IS2P\n")
+            self._move_in_rapid_mode(dx,dy, cut)
         elif self.state == DRIVER_STATE_RASTER:
             # goto in raster, switches to program to recall this function.
             self.ensure_program_mode()
@@ -1138,7 +1141,9 @@ class LhystudiosDriver:
                 self.goto_y(dy)
             self.data_output(b"N")
         elif self.state == DRIVER_STATE_MODECHANGE:
-            self.mode_shift_on_the_fly(dx, dy)
+            self.ensure_rapid_mode()
+            self._move_in_rapid_mode(dx, dy, cut)
+            # self.mode_shift_on_the_fly(dx, dy)
         self.check_bounds()
         self.context.signal(
             "driver;position",
@@ -1731,8 +1736,8 @@ class LhystudiosDriver:
         elif isinstance(element, tuple):
             self.spooled_item = element
         else:
-            self.rapid = self.root_context.opt_rapid_between
-            self.jog = self.root_context.opt_jog_mode
+            # self.rapid = self.root_context.opt_rapid_between
+            # self.jog = self.root_context.opt_jog_mode
             try:
                 self.spooled_item = element.generate()
             except AttributeError:
