@@ -50,7 +50,7 @@ from .cutcode import (
     LaserSettings,
     LineCut,
     QuadCut,
-    RasterCut,
+    RasterCut, SETTINGS_MODE_RASTER, SETTINGS_MODE_VECTOR, SETTINGS_MODE_DOTS,
 )
 
 
@@ -1022,6 +1022,7 @@ class LaserOperation(Node):
                 self.settings = LaserSettings(obj.settings)
 
         if self.operation == "Cut":
+            self.settings.mode = SETTINGS_MODE_VECTOR
             if self.settings.speed is None:
                 self.settings.speed = 10.0
             if self.settings.power is None:
@@ -1029,6 +1030,7 @@ class LaserOperation(Node):
             if self.color is None:
                 self.color = Color("red")
         elif self.operation == "Engrave":
+            self.settings.mode = SETTINGS_MODE_VECTOR
             if self.settings.speed is None:
                 self.settings.speed = 35.0
             if self.settings.power is None:
@@ -1036,6 +1038,7 @@ class LaserOperation(Node):
             if self.color is None:
                 self.color = Color("blue")
         elif self.operation == "Raster":
+            self.settings.mode = SETTINGS_MODE_RASTER
             if self.settings.raster_step == 0:
                 self.settings.raster_step = 2
             if self.settings.speed is None:
@@ -1045,6 +1048,7 @@ class LaserOperation(Node):
             if self.color is None:
                 self.color = Color("black")
         elif self.operation == "Image":
+            self.settings.mode = SETTINGS_MODE_RASTER
             if self.settings.speed is None:
                 self.settings.speed = 150.0
             if self.settings.power is None:
@@ -1052,6 +1056,7 @@ class LaserOperation(Node):
             if self.color is None:
                 self.color = Color("transparent")
         elif self.operation == "Dots":
+            self.settings.mode = SETTINGS_MODE_DOTS
             if self.settings.speed is None:
                 self.settings.speed = 35.0
             if self.settings.power is None:
@@ -1300,8 +1305,9 @@ class LaserOperation(Node):
                         cut_obj.previous = group[i - 1]
                     yield group
         elif self._operation == "Raster":
+            if settings.raster_step <= 0:
+                settings.raster_step = 1
             step = settings.raster_step
-            assert step > 0
             direction = settings.raster_direction
             for element in self.children:
                 svg_image = element.object
