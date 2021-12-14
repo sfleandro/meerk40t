@@ -25,6 +25,11 @@ from ..device.lasercommandconstants import (
 )
 from ..svgelements import Color, Path, Point
 
+SETTINGS_MODE_VECTOR = 0
+SETTINGS_MODE_RASTER = 1
+SETTINGS_MODE_DOTS = 10
+
+
 """
 Cutcode is a list of cut objects. These are line, quad, cubic, arc, and raster. And anything else that should be
 considered a laser primitive. These are disjointed objects. If the distance between one and the next exist the laser
@@ -43,6 +48,7 @@ MILS_IN_MM = 39.3701
 class LaserSettings:
     def __init__(self, *args, **kwargs):
         self.line_color = None
+        self.mode = SETTINGS_MODE_VECTOR
 
         self.laser_enabled = True
         self.speed = None
@@ -506,7 +512,7 @@ class QuadCut(CutObject):
         CutObject.__init__(
             self, start_point, end_point, settings=settings, passes=passes
         )
-        settings.raster_step = 0
+        settings.mode = SETTINGS_MODE_VECTOR
         self._control = control_point
 
     def c(self):
@@ -589,6 +595,7 @@ class RasterCut(CutObject):
         step = self.settings.raster_step
         self.step = step
         assert step > 0
+        assert self.settings.mode == SETTINGS_MODE_RASTER
 
         direction = self.settings.raster_direction
         traverse = 0
