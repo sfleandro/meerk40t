@@ -732,9 +732,16 @@ class LhystudiosDriver:
     def __init__(self, context, *args, **kwargs):
         self.context = context
         self.name = str(self.context)
+        self.settings = LaserSettings()
 
         self.root_context = context.root
-        self.settings = LaserSettings()
+        self.root_context.setting(bool, "opt_rapid_between", True)
+        self.root_context.setting(int, "opt_jog_mode", 0)
+        self.root_context.setting(int, "opt_jog_minimum", 127)
+
+        self.rapid = self.root_context.opt_rapid_between
+        self.jog = self.root_context.opt_jog_mode
+        context._quit = False
 
         self.next = None
         self.prev = None
@@ -759,22 +766,13 @@ class LhystudiosDriver:
         self.properties = 0
         self.is_relative = False
         self.laser = False
-        self.root_context.setting(bool, "opt_rapid_between", True)
-        self.root_context.setting(int, "opt_jog_mode", 0)
-        self.root_context.setting(int, "opt_jog_minimum", 127)
-        context._quit = False
 
-        self.rapid = self.root_context.opt_rapid_between
-        self.jog = self.root_context.opt_jog_mode
         self.rapid_override = False
         self.rapid_override_speed_x = 50.0
         self.rapid_override_speed_y = 50.0
         self._thread = None
         self._shutdown = False
         self.last_fetch = None
-
-        kernel = context._kernel
-        _ = kernel.translation
 
         self.CODE_RIGHT = b"B"
         self.CODE_LEFT = b"T"
@@ -803,7 +801,6 @@ class LhystudiosDriver:
         self.max_y = self.current_y
         self.min_x = self.current_x
         self.min_y = self.current_y
-        self.context = context
 
     def __repr__(self):
         return "LhystudiosDriver(%s)" % self.name
