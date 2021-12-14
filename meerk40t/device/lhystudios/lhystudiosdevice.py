@@ -815,6 +815,7 @@ class LhystudiosDriver(Driver):
                         self.set_step(p_set.raster_step)
                         self.set_acceleration(p_set.implicit_accel)
                         self.set_d_ratio(p_set.implicit_d_ratio)
+                        self.commit_mode()
                     self.settings.set_values(p_set)
                 elif on & PLOT_AXIS:  # Major Axis.
                     self.set_prop(REQUEST_AXIS)
@@ -1015,6 +1016,33 @@ class LhystudiosDriver(Driver):
         """
         self.goto_relative(x - self.current_x, y - self.current_y, cut)
 
+    def _move_in_rapid_mode(self, dx, dy, cut):
+        if self.rapid_override and (dx != 0 or dy != 0):
+            # Rapid movement override. Should make programmed jogs.
+            self.set_acceleration(None)
+            self.set_step(0)
+            if dx != 0:
+                self.ensure_rapid_mode()
+                self.set_speed(self.rapid_override_speed_x)
+                self.ensure_program_mode()
+                self.goto_octent(dx, 0, cut)
+            if dy != 0:
+                if self.rapid_override_speed_x != self.rapid_override_speed_y:
+                    self.ensure_rapid_mode()
+                    self.set_speed(self.rapid_override_speed_y)
+                    self.ensure_program_mode()
+                self.goto_octent(0, dy, cut)
+            self.ensure_rapid_mode()
+        else:
+            self.data_output(b"I")
+            if dx != 0:
+                self.goto_x(dx)
+            if dy != 0:
+                self.goto_y(dy)
+            self.data_output(b"S1P\n")
+            if not self.context.autolock:
+                self.data_output(b"IS2P\n")
+
     def goto_relative(self, dx, dy, cut):
         """
         Goto relative dx, dy. With cut set or not set.
@@ -1029,31 +1057,7 @@ class LhystudiosDriver(Driver):
         dx = int(round(dx))
         dy = int(round(dy))
         if self.state == DRIVER_STATE_RAPID:
-            if self.rapid_override and (dx != 0 or dy != 0):
-                # Rapid movement override. Should make programmed jogs.
-                self.set_acceleration(None)
-                self.set_step(0)
-                if dx != 0:
-                    self.ensure_rapid_mode()
-                    self.set_speed(self.rapid_override_speed_x)
-                    self.ensure_program_mode()
-                    self.goto_octent(dx, 0, cut)
-                if dy != 0:
-                    if self.rapid_override_speed_x != self.rapid_override_speed_y:
-                        self.ensure_rapid_mode()
-                        self.set_speed(self.rapid_override_speed_y)
-                        self.ensure_program_mode()
-                    self.goto_octent(0, dy, cut)
-                self.ensure_rapid_mode()
-            else:
-                self.data_output(b"I")
-                if dx != 0:
-                    self.goto_x(dx)
-                if dy != 0:
-                    self.goto_y(dy)
-                self.data_output(b"S1P\n")
-                if not self.context.autolock:
-                    self.data_output(b"IS2P\n")
+            self._move_in_rapid_mode(dx, dy, cut)
         elif self.state == DRIVER_STATE_RASTER:
             # goto in raster, switches to program to recall this function.
             self.ensure_program_mode()
@@ -1074,7 +1078,9 @@ class LhystudiosDriver(Driver):
                 self.goto_y(dy)
             self.data_output(b"N")
         elif self.state == DRIVER_STATE_MODECHANGE:
-            self.mode_shift_on_the_fly(dx, dy)
+            self.ensure_rapid_mode()
+            self._move_in_rapid_mode(dx, dy, cut)
+            # self.mode_shift_on_the_fly(dx, dy)
         self.check_bounds()
         self.context.signal(
             "driver;position",
@@ -1118,26 +1124,18 @@ class LhystudiosDriver(Driver):
     def set_speed(self, speed=None):
         if self.settings.speed != speed:
             self.settings.speed = speed
-            if self.state in (DRIVER_STATE_PROGRAM, DRIVER_STATE_RASTER):
-                self.state = DRIVER_STATE_MODECHANGE
 
     def set_d_ratio(self, dratio=None):
         if self.settings.dratio != dratio:
             self.settings.dratio = dratio
-            if self.state in (DRIVER_STATE_PROGRAM, DRIVER_STATE_RASTER):
-                self.state = DRIVER_STATE_MODECHANGE
 
     def set_acceleration(self, accel=None):
         if self.settings.acceleration != accel:
             self.settings.acceleration = accel
-            if self.state in (DRIVER_STATE_PROGRAM, DRIVER_STATE_RASTER):
-                self.state = DRIVER_STATE_MODECHANGE
 
     def set_step(self, step=None):
         if self.settings.raster_step != step:
             self.settings.raster_step = step
-            if self.state in (DRIVER_STATE_PROGRAM, DRIVER_STATE_RASTER):
-                self.state = DRIVER_STATE_MODECHANGE
 
     def laser_off(self):
         if not self.laser:
@@ -1189,6 +1187,23 @@ class LhystudiosDriver(Driver):
             self.laser = False
         self.state = DRIVER_STATE_RAPID
         self.context.signal("driver;mode", self.state)
+
+    def commit_mode(self):
+        self.data_output(b"N")
+        speed_code = LaserSpeed(
+            self.context.board,
+            self.settings.speed,
+            self.settings.raster_step,
+            d_ratio=self.settings.implicit_d_ratio,
+            acceleration=self.settings.implicit_accel,
+            fix_limit=True,
+            fix_lows=True,
+            fix_speeds=self.context.fix_speeds,
+            raster_horizontal=True,
+        ).speedcode
+        speed_code = bytes(speed_code, "utf8")
+        self.data_output(speed_code)
+        self.data_output(b"SE")
 
     def mode_shift_on_the_fly(self, dx=0, dy=0):
         """
