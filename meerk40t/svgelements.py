@@ -43,7 +43,7 @@ Though not required the Image class acquires new functionality if provided with 
 and the Arc can do exact arc calculations if scipy is installed.
 """
 
-SVGELEMENTS_VERSION = "1.6.5"
+SVGELEMENTS_VERSION = "1.6.7"
 
 MIN_DEPTH = 5
 ERROR = 1e-12
@@ -7834,6 +7834,7 @@ class Text(SVGElement, GraphicObject, Transformable):
     def property_by_values(self, values):
         Transformable.property_by_values(self, values)
         GraphicObject.property_by_values(self, values)
+        SVGElement.property_by_values(self, values)
         self.anchor = values.get(SVG_ATTR_TEXT_ANCHOR, self.anchor)
         self.font_face = values.get("font_face")
         self.font_face = values.get(SVG_ATTR_FONT_FACE, self.font_face)
@@ -8080,6 +8081,7 @@ class Image(SVGElement, GraphicObject, Transformable):
     def render(self, **kwargs):
         GraphicObject.render(self, **kwargs)
         Transformable.render(self, **kwargs)
+        SVGElement.render(self, **kwargs)
         width = kwargs.get("width", kwargs.get("relative_length"))
         height = kwargs.get("height", kwargs.get("relative_length"))
         try:
@@ -8401,25 +8403,36 @@ class SVG(Group):
         children = list()
 
         for event, elem in iterparse(source, events=("start", "end", "start-ns")):
-            try:
-                tag = elem.tag
-                if tag.startswith("{http://www.w3.org/2000/svg"):
-                    tag = tag[28:]  # Removing namespace. http://www.w3.org/2000/svg:
-            except AttributeError:
-                yield None, event, elem
-                continue
-
             if event == "start":
-                attributes = elem.attrib
-                # Create new node.
                 siblings = children  # Parent's children are now my siblings.
                 parent = (parent, children)  # parent is now previous node context
                 children = list()  # new node has no children.
-                node = (tag, elem, children)  # define this node.
+                node = (elem, children)  # define this node.
                 siblings.append(node)  # siblings now includes this node.
+                attributes = elem.attrib
+                if SVG_ATTR_ID in attributes:  # If we have an ID, we save the node.
+                    defs[attributes[SVG_ATTR_ID]] = node  # store node value in defs.
+            elif event == "end":
+                parent, children = parent
+            else:
+                children.append((elem, None))
+        event_defs = defs
+        nodes = children
+        # End preprocess
 
+        def semiparse(nodes):
+            for elem, children in nodes:
+                if children is None:
+                    yield None, "start-ns", elem
+                    continue
+                tag = elem.tag
+                if tag.startswith("{http://www.w3.org/2000/svg"):
+                    tag = tag[28:]  # Removing namespace. http://www.w3.org/2000/svg:
+                yield tag, "start", elem
+                yield from semiparse(children)
                 if SVG_TAG_USE == tag:
                     url = None
+                    attributes = elem.attrib
                     if XLINK_HREF in attributes:
                         url = attributes[XLINK_HREF]
                     if SVG_HREF in attributes:
@@ -8452,24 +8465,13 @@ class SVG(Group):
                                     x,
                                     y,
                                 )
-                        yield tag, event, elem
                         try:
-                            shadow_node = defs[url[1:]]
-                            children.append(
-                                shadow_node
-                            )  # Shadow children are children of the use.
-                            for n in SVG._shadow_iter(*shadow_node):
-                                yield n
+                            yield from semiparse([event_defs[url[1:]]])
                         except KeyError:
                             pass  # Failed to find link.
-                else:
-                    yield tag, event, elem
-                if SVG_ATTR_ID in attributes:  # If we have an ID, we save the node.
-                    defs[attributes[SVG_ATTR_ID]] = node  # store node value in defs.
-            elif event == "end":
-                yield tag, event, elem
-                # event is 'end', pop values.
-                parent, children = parent  # Parent is now node.
+                yield tag, "end", elem
+
+        yield from semiparse(nodes)
 
     @staticmethod
     def parse(
